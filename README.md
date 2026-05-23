@@ -2,7 +2,7 @@
 
 Welcome to the [Cambridge Hackspace](https://www.cambridgehackspace.com)
 Coil Winder Project! This repository is essentially where I'll be tracking and
-documenting progress on an open-source axial flux coil winder project.
+documenting progress on an open-source axial flux coil-winding machine.
 
 The entirety of this project is released under the [MIT License](https://mit-license.org/).
 We humbly request, but do not require, that you refrain from using this
@@ -40,11 +40,14 @@ okay with that.
 
 ## Directory
 
-You'll find CAD stuff in `designs/` and microcontroller software in `drivers/`.
-I'm also going to stray from GitHub's "wiki" offering and include in various
-readmes throughout the repository for now. I'll probably keep notes in there
-for the moment, and I'll try to remember to include design choices. We'll see
-if I stick to that or not, but here's to hoping.
+Here's how I'm (sorta) organizing things.
+
+- `chassis/` - stuff pertaining to the body of the build itself
+- `drivers/` - software for the microcontroller
+- `electrics/` - circuits, power management, etc.
+
+I'll keep readmes in each of these that keep track of design
+choices and plans, etc.
 
 ## Open Projects
 
