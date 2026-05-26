@@ -2,14 +2,18 @@
 #![no_main]
 
 mod display;
+mod inputs;
 mod ladder;
 mod lcd_i2c;
+mod state;
 
 use arduino_hal::prelude::*;
 use display::{DisplayManager, HardwareDisplay};
+use inputs::InputState;
 use ladder::ResistorLadder;
 use lcd_i2c::LcdI2c;
 use panic_halt as _;
+use state::AppState;
 
 struct StringBuffer<const N: usize> {
     buf: [u8; N],
@@ -71,21 +75,33 @@ fn main() -> ! {
         ResistorLadder::<4>::new(1000, &[10000, 4700, 2200, 1000], &[(0, 1), (2, 3)]);
     const LADDER_ACT: ResistorLadder<3> = ResistorLadder::<3>::new(1000, &[1000, 2200, 4700], &[]);
 
-    let mut loop_counter = 0;
+    let mut inputs = InputState {
+        dir_curr: 0,
+        dir_prev: 0,
+        act_curr: 0,
+        act_prev: 0,
+    };
+    let mut app_state = AppState::initial();
+    let mut loop_counter: u8 = 0;
 
     loop {
         led.toggle();
 
         let _ = a0.analog_read(&mut adc);
-        arduino_hal::delay_ms(100);
+        arduino_hal::delay_ms(2);
         let val_a0 = a0.analog_read(&mut adc);
 
         let _ = a1.analog_read(&mut adc);
-        arduino_hal::delay_ms(100);
+        arduino_hal::delay_ms(2);
         let val_a1 = a1.analog_read(&mut adc);
 
         let state_act = LADDER_ACT.resolve(val_a0);
         let state_dir = LADDER_DIR.resolve(val_a1);
+
+        inputs.act_prev = inputs.act_curr;
+        inputs.act_curr = state_act;
+        inputs.dir_prev = inputs.dir_curr;
+        inputs.dir_curr = state_dir;
 
         let mut csv_buf = StringBuffer::<64>::new();
         let mut first = true;
@@ -101,16 +117,16 @@ fn main() -> ! {
         }
 
         if (state_dir & (1 << 0)) != 0 {
-            add_switch!("UP");
-        }
-        if (state_dir & (1 << 1)) != 0 {
-            add_switch!("DOWN");
-        }
-        if (state_dir & (1 << 2)) != 0 {
             add_switch!("LEFT");
         }
-        if (state_dir & (1 << 3)) != 0 {
+        if (state_dir & (1 << 1)) != 0 {
             add_switch!("RIGHT");
+        }
+        if (state_dir & (1 << 2)) != 0 {
+            add_switch!("DOWN");
+        }
+        if (state_dir & (1 << 3)) != 0 {
+            add_switch!("UP");
         }
 
         if (state_act & (1 << 0)) != 0 {
@@ -137,22 +153,13 @@ fn main() -> ! {
             let _ = ufmt::uwrite!(&mut csv_buf, "None");
         }
 
-        let lines = ["Active Switches:", csv_buf.as_str()];
-
-        if loop_counter > 0 && loop_counter % 12 == 0 {
-            let max_top = lines.len().saturating_sub(2);
-            let next_top = if max_top > 0 {
-                (ui.get_top() + 1) % (max_top + 1)
-            } else {
-                0
-            };
-            ui.set_top(next_top);
+        app_state = app_state.update(&mut ui, &mut lcd, &inputs, csv_buf.as_str());
+        if loop_counter >= 3 {
+            ui.tick();
+            loop_counter = 0;
         }
 
-        let _ = ui.draw(&mut lcd, &lines);
-        ui.tick();
-
-        arduino_hal::delay_ms(250);
+        arduino_hal::delay_ms(50);
         loop_counter += 1;
     }
 }
