@@ -51,10 +51,7 @@ impl MenuId {
                 },
             },
             MenuId::Maintenance => match selection {
-                0 => AppState::NotImplemented {
-                    ticks: 100,
-                    prev: ReturnTarget::Menu(*self, selection),
-                },
+                0 => AppState::MotorTest,
                 1 => AppState::SwitchTest,
                 2 => AppState::VoltageTest,
                 _ => AppState::Menu {

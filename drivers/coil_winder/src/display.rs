@@ -11,6 +11,9 @@ pub struct DisplayManager {
     top: usize,
     row_hashes: [u32; 4],
     row_ticks: [usize; 4],
+    front_buffer: [u8; 80],
+    back_buffer: [u8; 80],
+    needs_redraw: bool,
 }
 
 impl DisplayManager {
@@ -21,6 +24,9 @@ impl DisplayManager {
             top: 0,
             row_hashes: [0; 4],
             row_ticks: [0; 4],
+            front_buffer: [0; 80],
+            back_buffer: [b' '; 80],
+            needs_redraw: true,
         }
     }
 
@@ -47,8 +53,6 @@ impl DisplayManager {
         self.top = self.top.min(max_top);
 
         for row in 0..self.height {
-            display.set_cursor(row, 0)?;
-
             let line_idx = self.top + (row as usize);
             let r = row as usize;
 
@@ -68,29 +72,57 @@ impl DisplayManager {
 
                 let tick = self.row_ticks[r];
 
-                if len > (self.width as usize) {
-                    let virt_len = len + 4;
-                    for col in 0..(self.width as usize) {
+                for col in 0..(self.width as usize) {
+                    let c = if len > (self.width as usize) {
+                        let virt_len = len + 4;
                         let char_idx = (tick + col) % virt_len;
-                        let c = if char_idx < len {
-                            line[char_idx] as char
+                        if char_idx < len {
+                            line[char_idx]
                         } else {
-                            ' '
-                        };
-                        display.write_char(c)?;
-                    }
-                } else {
-                    for col in 0..(self.width as usize) {
-                        let c = if col < len { line[col] as char } else { ' ' };
-                        display.write_char(c)?;
-                    }
+                            b' '
+                        }
+                    } else {
+                        if col < len {
+                            line[col]
+                        } else {
+                            b' '
+                        }
+                    };
+
+                    let fb_idx = r * (self.width as usize) + col;
+                    self.back_buffer[fb_idx] = c;
                 }
             } else {
-                for _ in 0..self.width {
-                    display.write_char(' ')?;
+                for col in 0..(self.width as usize) {
+                    let fb_idx = r * (self.width as usize) + col;
+                    self.back_buffer[fb_idx] = b' ';
                 }
             }
         }
+
+        if self.needs_redraw {
+            self.front_buffer.fill(0);
+        }
+
+        for row in 0..self.height {
+            let mut cursor_col = 255;
+            for col in 0..(self.width as usize) {
+                let fb_idx = (row as usize) * (self.width as usize) + col;
+                let desired = self.back_buffer[fb_idx];
+
+                if self.front_buffer[fb_idx] != desired {
+                    if cursor_col != col {
+                        display.set_cursor(row, col as u8)?;
+                        cursor_col = col;
+                    }
+                    display.write_char(desired as char)?;
+                    self.front_buffer[fb_idx] = desired;
+                    cursor_col += 1;
+                }
+            }
+        }
+
+        self.needs_redraw = false;
         Ok(())
     }
 }

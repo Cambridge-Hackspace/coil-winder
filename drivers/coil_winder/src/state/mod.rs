@@ -1,6 +1,7 @@
 pub mod about;
 pub mod home;
 pub mod menu;
+pub mod motor_test;
 pub mod not_implemented;
 pub mod preflight;
 pub mod switch_test;
@@ -36,6 +37,7 @@ pub enum AppState {
     About,
     SwitchTest,
     VoltageTest,
+    MotorTest,
 }
 
 impl AppState {
@@ -50,6 +52,8 @@ impl AppState {
         inputs: &InputState,
         switch_csv: &str,
         voltage_mv: u16,
+        spindle: &mut dyn crate::stepper::StepperMotor,
+        traverse: &mut dyn crate::stepper::StepperMotor,
     ) -> AppState {
         match self {
             AppState::Preflight { ticks } => preflight::update(*ticks, ui, display),
@@ -61,6 +65,7 @@ impl AppState {
             AppState::About => about::update(ui, display, inputs),
             AppState::SwitchTest => switch_test::update(ui, display, inputs, switch_csv),
             AppState::VoltageTest => voltage_test::update(ui, display, inputs, voltage_mv),
+            AppState::MotorTest => motor_test::update(ui, display, inputs, spindle, traverse),
         }
     }
 }
