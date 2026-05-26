@@ -4,6 +4,7 @@ pub mod menu;
 pub mod not_implemented;
 pub mod preflight;
 pub mod switch_test;
+pub mod voltage_test;
 
 use crate::display::{DisplayManager, HardwareDisplay};
 use crate::inputs::InputState;
@@ -34,6 +35,7 @@ pub enum AppState {
     NotImplemented { ticks: u16, prev: ReturnTarget },
     About,
     SwitchTest,
+    VoltageTest,
 }
 
 impl AppState {
@@ -47,6 +49,7 @@ impl AppState {
         display: &mut D,
         inputs: &InputState,
         switch_csv: &str,
+        voltage_mv: u16,
     ) -> AppState {
         match self {
             AppState::Preflight { ticks } => preflight::update(*ticks, ui, display),
@@ -57,6 +60,7 @@ impl AppState {
             }
             AppState::About => about::update(ui, display, inputs),
             AppState::SwitchTest => switch_test::update(ui, display, inputs, switch_csv),
+            AppState::VoltageTest => voltage_test::update(ui, display, inputs, voltage_mv),
         }
     }
 }
