@@ -6,6 +6,8 @@ mod inputs;
 mod ladder;
 mod lcd_i2c;
 mod state;
+mod string_buffer;
+mod voltage;
 
 use arduino_hal::prelude::*;
 use display::{DisplayManager, HardwareDisplay};
@@ -14,37 +16,8 @@ use ladder::ResistorLadder;
 use lcd_i2c::LcdI2c;
 use panic_halt as _;
 use state::AppState;
-
-struct StringBuffer<const N: usize> {
-    buf: [u8; N],
-    len: usize,
-}
-
-impl<const N: usize> StringBuffer<N> {
-    fn new() -> Self {
-        Self {
-            buf: [0; N],
-            len: 0,
-        }
-    }
-
-    fn as_str(&self) -> &str {
-        unsafe { core::str::from_utf8_unchecked(&self.buf[..self.len]) }
-    }
-}
-
-impl<const N: usize> ufmt::uWrite for StringBuffer<N> {
-    type Error = ();
-    fn write_str(&mut self, s: &str) -> Result<(), ()> {
-        let bytes = s.as_bytes();
-        if self.len + bytes.len() > N {
-            return Err(());
-        }
-        self.buf[self.len..self.len + bytes.len()].copy_from_slice(bytes);
-        self.len += bytes.len();
-        Ok(())
-    }
-}
+use string_buffer::StringBuffer;
+use voltage::VoltageMonitor;
 
 #[arduino_hal::entry]
 fn main() -> ! {
@@ -57,6 +30,7 @@ fn main() -> ! {
     let mut adc = arduino_hal::Adc::new(dp.ADC, Default::default());
     let a0 = pins.a0.into_pull_up_input().into_analog_input(&mut adc);
     let a1 = pins.a1.into_pull_up_input().into_analog_input(&mut adc);
+    let a2 = pins.a2.into_analog_input(&mut adc);
 
     let i2c = arduino_hal::I2c::new(
         dp.TWI,
@@ -95,8 +69,13 @@ fn main() -> ! {
         arduino_hal::delay_ms(2);
         let val_a1 = a1.analog_read(&mut adc);
 
+        let _ = a2.analog_read(&mut adc);
+        arduino_hal::delay_ms(2);
+        let val_a2 = a2.analog_read(&mut adc);
+
         let state_act = LADDER_ACT.resolve(val_a0);
         let state_dir = LADDER_DIR.resolve(val_a1);
+        let voltage_mv = VoltageMonitor::calculate_millivolts(val_a2);
 
         inputs.act_prev = inputs.act_curr;
         inputs.act_curr = state_act;
@@ -141,9 +120,11 @@ fn main() -> ! {
 
         let _ = ufmt::uwriteln!(
             &mut serial,
-            "A0: {}, A1: {} | ACT: {}, DIR: {} | {}",
+            "A0: {}, A1: {}, A2: {} ({}mV) | ACT: {}, DIR: {} | {}",
             val_a0,
             val_a1,
+            val_a2,
+            voltage_mv,
             state_act,
             state_dir,
             if first { "None" } else { csv_buf.as_str() }
@@ -153,7 +134,7 @@ fn main() -> ! {
             let _ = ufmt::uwrite!(&mut csv_buf, "None");
         }
 
-        app_state = app_state.update(&mut ui, &mut lcd, &inputs, csv_buf.as_str());
+        app_state = app_state.update(&mut ui, &mut lcd, &inputs, csv_buf.as_str(), voltage_mv);
         if loop_counter >= 3 {
             ui.tick();
             loop_counter = 0;

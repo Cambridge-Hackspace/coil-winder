@@ -56,10 +56,7 @@ impl MenuId {
                     prev: ReturnTarget::Menu(*self, selection),
                 },
                 1 => AppState::SwitchTest,
-                2 => AppState::NotImplemented {
-                    ticks: 100,
-                    prev: ReturnTarget::Menu(*self, selection),
-                },
+                2 => AppState::VoltageTest,
                 _ => AppState::Menu {
                     id: *self,
                     selection,
