@@ -6,16 +6,18 @@ mod inputs;
 mod ladder;
 mod lcd_i2c;
 mod state;
+mod stepper;
 mod string_buffer;
 mod voltage;
 
 use arduino_hal::prelude::*;
-use display::{DisplayManager, HardwareDisplay};
+use display::DisplayManager;
 use inputs::InputState;
 use ladder::ResistorLadder;
 use lcd_i2c::LcdI2c;
 use panic_halt as _;
 use state::AppState;
+use stepper::StepperMotor;
 use string_buffer::StringBuffer;
 use voltage::VoltageMonitor;
 
@@ -39,6 +41,20 @@ fn main() -> ! {
         100000,
     );
 
+    let mut spindle = stepper::Stepper::new(
+        pins.d4.into_output(),
+        pins.d5.into_output(),
+        pins.d6.into_output(),
+        pins.d7.into_output(),
+    );
+
+    let mut traverse = stepper::Stepper::new(
+        pins.d8.into_output(),
+        pins.d9.into_output(),
+        pins.d10.into_output(),
+        pins.d11.into_output(),
+    );
+
     arduino_hal::delay_ms(500);
 
     ufmt::uwriteln!(&mut serial, "Initializing LCD...").unwrap();
@@ -56,21 +72,24 @@ fn main() -> ! {
         act_prev: 0,
     };
     let mut app_state = AppState::initial();
-    let mut loop_counter: u8 = 0;
+    let mut loop_counter: u16 = 0;
 
     loop {
         led.toggle();
 
+        spindle.tick();
+        traverse.tick();
+
         let _ = a0.analog_read(&mut adc);
-        arduino_hal::delay_ms(2);
+        arduino_hal::delay_us(50);
         let val_a0 = a0.analog_read(&mut adc);
 
         let _ = a1.analog_read(&mut adc);
-        arduino_hal::delay_ms(2);
+        arduino_hal::delay_us(50);
         let val_a1 = a1.analog_read(&mut adc);
 
         let _ = a2.analog_read(&mut adc);
-        arduino_hal::delay_ms(2);
+        arduino_hal::delay_us(50);
         let val_a2 = a2.analog_read(&mut adc);
 
         let state_act = LADDER_ACT.resolve(val_a0);
@@ -118,29 +137,39 @@ fn main() -> ! {
             add_switch!("RESET");
         }
 
-        let _ = ufmt::uwriteln!(
-            &mut serial,
-            "A0: {}, A1: {}, A2: {} ({}mV) | ACT: {}, DIR: {} | {}",
-            val_a0,
-            val_a1,
-            val_a2,
-            voltage_mv,
-            state_act,
-            state_dir,
-            if first { "None" } else { csv_buf.as_str() }
-        );
-
         if first {
             let _ = ufmt::uwrite!(&mut csv_buf, "None");
         }
 
-        app_state = app_state.update(&mut ui, &mut lcd, &inputs, csv_buf.as_str(), voltage_mv);
-        if loop_counter >= 3 {
+        app_state = app_state.update(
+            &mut ui,
+            &mut lcd,
+            &inputs,
+            csv_buf.as_str(),
+            voltage_mv,
+            &mut spindle,
+            &mut traverse,
+        );
+
+        if loop_counter >= 120 {
             ui.tick();
+
+            let _ = ufmt::uwriteln!(
+                &mut serial,
+                "A0: {}, A1: {}, A2: {} ({}mV) | ACT: {}, DIR: {} | {}",
+                val_a0,
+                val_a1,
+                val_a2,
+                voltage_mv,
+                state_act,
+                state_dir,
+                csv_buf.as_str()
+            );
+
             loop_counter = 0;
         }
 
-        arduino_hal::delay_ms(50);
         loop_counter += 1;
+        arduino_hal::delay_ms(1);
     }
 }
