@@ -9,7 +9,7 @@ pub struct LcdI2c<I2C> {
 }
 
 impl<I2C: I2c> LcdI2c<I2C> {
-    pub fn new(mut i2c: I2C, address: u8) -> Result<Self, I2C::Error> {
+    pub fn new(i2c: I2C, address: u8) -> Result<Self, I2C::Error> {
         let mut lcd = Self {
             i2c,
             address,

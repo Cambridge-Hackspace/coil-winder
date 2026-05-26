@@ -5,38 +5,27 @@ pub trait HardwareDisplay {
     fn clear(&mut self) -> Result<(), Self::Error>;
 }
 
-pub struct DisplayManager<'a> {
+pub struct DisplayManager {
     width: u8,
     height: u8,
-    lines: &'a [&'a str],
     top: usize,
-    marquee_tick: usize,
+    row_hashes: [u32; 4],
+    row_ticks: [usize; 4],
 }
 
-impl<'a> DisplayManager<'a> {
+impl DisplayManager {
     pub fn new(width: u8, height: u8) -> Self {
         Self {
             width,
             height,
-            lines: &[],
             top: 0,
-            marquee_tick: 0,
+            row_hashes: [0; 4],
+            row_ticks: [0; 4],
         }
     }
 
-    pub fn set_lines(&mut self, lines: &'a [&'a str]) {
-        self.lines = lines;
-        self.top = 0;
-        self.marquee_tick = 0;
-    }
-
     pub fn set_top(&mut self, top: usize) {
-        let max_top = if self.lines.is_empty() {
-            0
-        } else {
-            self.lines.len().saturating_sub(1)
-        };
-        self.top = top.min(max_top);
+        self.top = top;
     }
 
     pub fn get_top(&self) -> usize {
@@ -44,23 +33,45 @@ impl<'a> DisplayManager<'a> {
     }
 
     pub fn tick(&mut self) {
-        self.marquee_tick = self.marquee_tick.wrapping_add(1);
+        for tick in self.row_ticks.iter_mut() {
+            *tick = tick.wrapping_add(1);
+        }
     }
 
-    pub fn draw<D: HardwareDisplay>(&self, display: &mut D) -> Result<(), D::Error> {
+    pub fn draw<D: HardwareDisplay>(
+        &mut self,
+        display: &mut D,
+        lines: &[&str],
+    ) -> Result<(), D::Error> {
+        let max_top = lines.len().saturating_sub(self.height as usize);
+        self.top = self.top.min(max_top);
+
         for row in 0..self.height {
             display.set_cursor(row, 0)?;
 
             let line_idx = self.top + (row as usize);
+            let r = row as usize;
 
-            if line_idx < self.lines.len() {
-                let line = self.lines[line_idx].as_bytes();
+            if line_idx < lines.len() {
+                let line = lines[line_idx].as_bytes();
                 let len = line.len();
+
+                let mut hash: u32 = 5381;
+                for &b in line {
+                    hash = hash.wrapping_mul(33).wrapping_add(b as u32);
+                }
+
+                if hash != self.row_hashes[r] {
+                    self.row_hashes[r] = hash;
+                    self.row_ticks[r] = 0;
+                }
+
+                let tick = self.row_ticks[r];
 
                 if len > (self.width as usize) {
                     let virt_len = len + 4;
                     for col in 0..(self.width as usize) {
-                        let char_idx = (self.marquee_tick + col) % virt_len;
+                        let char_idx = (tick + col) % virt_len;
                         let c = if char_idx < len {
                             line[char_idx] as char
                         } else {

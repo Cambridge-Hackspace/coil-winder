@@ -1,6 +1,6 @@
 [general]
-board = "uno"
-# After flashing, open the serial console at 57600 baud.
+board = "duemilanove"
+port= "/dev/ttyUSB0"
 open-console = true
 serial-baudrate = 57600
 
