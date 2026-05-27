@@ -2,7 +2,7 @@ use crate::display::{DisplayManager, HardwareDisplay};
 use crate::inputs::{InputState, ACT_RESET};
 use crate::state::menu::MenuId;
 use crate::state::{AppState, ReturnTarget};
-use crate::stepper::{Direction, StepperMotor};
+use crate::stepper::{Direction, Speed, StepperMotor};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum HomingTarget {
@@ -51,7 +51,7 @@ pub fn update<D: HardwareDisplay>(
                 next_phase = 2;
                 next_start = traverse.position();
             } else {
-                traverse.set_speed(100);
+                traverse.set_speed(Speed::Fast);
                 traverse.set_direction(Direction::Backward);
                 traverse.set_moving(true);
             }
@@ -70,7 +70,7 @@ pub fn update<D: HardwareDisplay>(
                         msg: "Limit switch malfunction!",
                     };
                 }
-                traverse.set_speed(25);
+                traverse.set_speed(Speed::Slow);
                 traverse.set_direction(Direction::Forward);
                 traverse.set_moving(true);
             }
@@ -83,7 +83,7 @@ pub fn update<D: HardwareDisplay>(
                 next_home = next_home + (diff / 2);
                 next_phase = 4;
             } else {
-                traverse.set_speed(25);
+                traverse.set_speed(Speed::Slow);
                 traverse.set_direction(Direction::Backward);
                 traverse.set_moving(true);
             }
@@ -104,7 +104,7 @@ pub fn update<D: HardwareDisplay>(
                     },
                 };
             } else {
-                traverse.set_speed(50);
+                traverse.set_speed(Speed::Moderate);
                 if current < next_home {
                     traverse.set_direction(Direction::Forward);
                 } else {

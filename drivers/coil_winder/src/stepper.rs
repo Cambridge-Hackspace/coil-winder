@@ -1,4 +1,23 @@
+use avr_device::interrupt::Mutex;
+use core::cell::RefCell;
 use embedded_hal::digital::OutputPin;
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum Speed {
+    Fast,
+    Moderate,
+    Slow,
+}
+
+impl Speed {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Speed::Fast => "FST",
+            Speed::Moderate => "MOD",
+            Speed::Slow => "SLW",
+        }
+    }
+}
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Direction {
@@ -7,12 +26,12 @@ pub enum Direction {
 }
 
 pub trait StepperMotor {
-    fn set_speed(&mut self, speed_percent: u8);
+    fn set_speed(&mut self, speed: Speed);
     fn set_direction(&mut self, dir: Direction);
     fn set_moving(&mut self, moving: bool);
     fn release(&mut self);
     fn tick(&mut self);
-    fn speed(&self) -> u8;
+    fn speed(&self) -> Speed;
     fn direction(&self) -> Direction;
     fn is_moving(&self) -> bool;
     fn position(&self) -> i32;
@@ -25,7 +44,7 @@ pub struct Stepper<P1, P2, P3, P4> {
     p3: P3,
     p4: P4,
     step_index: u8,
-    speed: u8,
+    speed: Speed,
     direction: Direction,
     moving: bool,
     tick_count: u16,
@@ -47,11 +66,11 @@ where
             p3,
             p4,
             step_index: 0,
-            speed: 100,
+            speed: Speed::Fast,
             direction: Direction::Forward,
             moving: false,
             tick_count: 0,
-            ticks_per_step: 1,
+            ticks_per_step: 3,
             position: 0,
         }
     }
@@ -97,14 +116,12 @@ where
     P3: OutputPin,
     P4: OutputPin,
 {
-    fn set_speed(&mut self, speed_percent: u8) {
-        self.speed = speed_percent;
-        self.ticks_per_step = match speed_percent {
-            100 => 1, // ~1ms/step
-            75 => 2,  // ~2ms/step
-            50 => 4,  // ~4ms/step
-            25 => 8,  // ~8ms/step
-            _ => 1,
+    fn set_speed(&mut self, speed: Speed) {
+        self.speed = speed;
+        self.ticks_per_step = match speed {
+            Speed::Fast => 3,     // 3 * 0.5ms = 1.5ms
+            Speed::Moderate => 5, // 5 * 0.5ms = 2.5ms
+            Speed::Slow => 8,     // 8 * 0.5ms = 4.0ms
         };
     }
 
@@ -158,7 +175,7 @@ where
         }
     }
 
-    fn speed(&self) -> u8 {
+    fn speed(&self) -> Speed {
         self.speed
     }
 
@@ -176,5 +193,100 @@ where
 
     fn set_position(&mut self, pos: i32) {
         self.position = pos;
+    }
+}
+
+/// A proxy to safely control a StepperMotor that lives inside a hardware interrupt Mutex.
+pub struct StepperProxy<'a, S> {
+    mutex: &'a Mutex<RefCell<Option<S>>>,
+}
+
+impl<'a, S> StepperProxy<'a, S> {
+    pub fn new(mutex: &'a Mutex<RefCell<Option<S>>>) -> Self {
+        Self { mutex }
+    }
+}
+
+impl<'a, S: StepperMotor> StepperMotor for StepperProxy<'a, S> {
+    fn set_speed(&mut self, speed: Speed) {
+        avr_device::interrupt::free(|cs| {
+            if let Some(s) = self.mutex.borrow(cs).borrow_mut().as_mut() {
+                s.set_speed(speed);
+            }
+        });
+    }
+
+    fn set_direction(&mut self, dir: Direction) {
+        avr_device::interrupt::free(|cs| {
+            if let Some(s) = self.mutex.borrow(cs).borrow_mut().as_mut() {
+                s.set_direction(dir);
+            }
+        });
+    }
+
+    fn set_moving(&mut self, moving: bool) {
+        avr_device::interrupt::free(|cs| {
+            if let Some(s) = self.mutex.borrow(cs).borrow_mut().as_mut() {
+                s.set_moving(moving);
+            }
+        });
+    }
+
+    fn release(&mut self) {
+        avr_device::interrupt::free(|cs| {
+            if let Some(s) = self.mutex.borrow(cs).borrow_mut().as_mut() {
+                s.release();
+            }
+        });
+    }
+
+    fn tick(&mut self) {} // nop; handled by hardware interrupt
+
+    fn speed(&self) -> Speed {
+        avr_device::interrupt::free(|cs| {
+            self.mutex
+                .borrow(cs)
+                .borrow()
+                .as_ref()
+                .map_or(Speed::Fast, |s| s.speed())
+        })
+    }
+
+    fn direction(&self) -> Direction {
+        avr_device::interrupt::free(|cs| {
+            self.mutex
+                .borrow(cs)
+                .borrow()
+                .as_ref()
+                .map_or(Direction::Forward, |s| s.direction())
+        })
+    }
+
+    fn is_moving(&self) -> bool {
+        avr_device::interrupt::free(|cs| {
+            self.mutex
+                .borrow(cs)
+                .borrow()
+                .as_ref()
+                .map_or(false, |s| s.is_moving())
+        })
+    }
+
+    fn position(&self) -> i32 {
+        avr_device::interrupt::free(|cs| {
+            self.mutex
+                .borrow(cs)
+                .borrow()
+                .as_ref()
+                .map_or(0, |s| s.position())
+        })
+    }
+
+    fn set_position(&mut self, pos: i32) {
+        avr_device::interrupt::free(|cs| {
+            if let Some(s) = self.mutex.borrow(cs).borrow_mut().as_mut() {
+                s.set_position(pos);
+            }
+        });
     }
 }
