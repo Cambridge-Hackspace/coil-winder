@@ -2,7 +2,7 @@ use crate::display::{DisplayManager, HardwareDisplay};
 use crate::inputs::{InputState, ACT_CENTER, ACT_RESET, DIR_DOWN, DIR_LEFT, DIR_RIGHT, DIR_UP};
 use crate::state::menu::MenuId;
 use crate::state::AppState;
-use crate::stepper::{Direction, StepperMotor};
+use crate::stepper::{Direction, Speed, StepperMotor};
 use crate::string_buffer::StringBuffer;
 
 pub fn update<D: HardwareDisplay>(
@@ -15,11 +15,9 @@ pub fn update<D: HardwareDisplay>(
     // cycle speed on center action button press
     if inputs.just_pressed_act(ACT_CENTER) {
         let next_speed = match spindle.speed() {
-            25 => 50,
-            50 => 75,
-            75 => 100,
-            100 => 25,
-            _ => 100,
+            Speed::Fast => Speed::Moderate,
+            Speed::Moderate => Speed::Slow,
+            Speed::Slow => Speed::Fast,
         };
         spindle.set_speed(next_speed);
         traverse.set_speed(next_speed);
@@ -68,8 +66,8 @@ pub fn update<D: HardwareDisplay>(
     let mut buf1 = StringBuffer::<16>::new();
     let mut buf2 = StringBuffer::<16>::new();
 
-    let _ = ufmt::uwrite!(&mut buf1, "Spd:{} {}%", s_dir, spindle.speed());
-    let _ = ufmt::uwrite!(&mut buf2, "Trv:{} {}%", t_dir, traverse.speed());
+    let _ = ufmt::uwrite!(&mut buf1, "Spndl: {} {}", s_dir, spindle.speed().as_str());
+    let _ = ufmt::uwrite!(&mut buf2, "Trvrs: {} {}", t_dir, traverse.speed().as_str());
 
     let _ = ui.draw(display, &[buf1.as_str(), buf2.as_str()]);
 

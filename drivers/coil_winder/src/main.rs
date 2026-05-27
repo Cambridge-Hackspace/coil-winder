@@ -11,6 +11,8 @@ mod stepper;
 mod string_buffer;
 mod voltage;
 
+use avr_device::interrupt::Mutex;
+use core::cell::RefCell;
 use core::sync::atomic::{AtomicBool, Ordering};
 use display::DisplayManager;
 use inputs::InputState;
@@ -23,6 +25,24 @@ use string_buffer::StringBuffer;
 use voltage::{VoltageMonitor, VoltageStatus};
 
 static LIMIT_SWITCH_PRESSED: AtomicBool = AtomicBool::new(false);
+
+type DynPin = arduino_hal::port::Pin<arduino_hal::port::mode::Output>;
+type DynStepper = stepper::Stepper<DynPin, DynPin, DynPin, DynPin>;
+
+static SPINDLE: Mutex<RefCell<Option<DynStepper>>> = Mutex::new(RefCell::new(None));
+static TRAVERSE: Mutex<RefCell<Option<DynStepper>>> = Mutex::new(RefCell::new(None));
+
+#[avr_device::interrupt(atmega328p)]
+fn TIMER1_COMPA() {
+    avr_device::interrupt::free(|cs| {
+        if let Some(s) = SPINDLE.borrow(cs).borrow_mut().as_mut() {
+            s.tick();
+        }
+        if let Some(t) = TRAVERSE.borrow(cs).borrow_mut().as_mut() {
+            t.tick();
+        }
+    });
+}
 
 #[avr_device::interrupt(atmega328p)]
 fn INT0() {
@@ -51,19 +71,27 @@ fn main() -> ! {
         100000,
     );
 
-    let mut spindle = stepper::Stepper::new(
-        pins.d4.into_output(),
-        pins.d5.into_output(),
-        pins.d6.into_output(),
-        pins.d7.into_output(),
+    let mut spindle_stepper = stepper::Stepper::new(
+        pins.d4.into_output().downgrade(),
+        pins.d5.into_output().downgrade(),
+        pins.d6.into_output().downgrade(),
+        pins.d7.into_output().downgrade(),
     );
 
-    let mut traverse = stepper::Stepper::new(
-        pins.d8.into_output(),
-        pins.d9.into_output(),
-        pins.d10.into_output(),
-        pins.d11.into_output(),
+    let mut traverse_stepper = stepper::Stepper::new(
+        pins.d8.into_output().downgrade(),
+        pins.d9.into_output().downgrade(),
+        pins.d10.into_output().downgrade(),
+        pins.d11.into_output().downgrade(),
     );
+
+    avr_device::interrupt::free(|cs| {
+        *SPINDLE.borrow(cs).borrow_mut() = Some(spindle_stepper);
+        *TRAVERSE.borrow(cs).borrow_mut() = Some(traverse_stepper);
+    });
+
+    let mut spindle = stepper::StepperProxy::new(&SPINDLE);
+    let mut traverse = stepper::StepperProxy::new(&TRAVERSE);
 
     dp.EXINT
         .eicra()
@@ -71,6 +99,12 @@ fn main() -> ! {
     dp.EXINT
         .eimsk()
         .modify(|r, w| unsafe { w.bits(r.bits() | 0x01) });
+
+    // Timer1: (2kHz) CTC hardware interrupts
+    dp.TC1.tccr1a().write(|w| unsafe { w.bits(0) });
+    dp.TC1.tccr1b().write(|w| unsafe { w.bits(0x0b) }); // CTC mode, prescaler 64
+    dp.TC1.ocr1a().write(|w| unsafe { w.bits(124) }); // 16MHz / 64 = 250kHz; 125 ticks == 0.5ms (2kHz)
+    dp.TC1.timsk1().write(|w| unsafe { w.bits(0x02) }); // OCIE1A
 
     LIMIT_SWITCH_PRESSED.store(d2.is_high(), Ordering::Relaxed);
     unsafe { avr_device::interrupt::enable() };
@@ -97,9 +131,6 @@ fn main() -> ! {
     loop {
         led.toggle();
 
-        spindle.tick();
-        traverse.tick();
-
         let _ = a0.analog_read(&mut adc);
         arduino_hal::delay_us(50);
         let val_a0 = a0.analog_read(&mut adc);
@@ -116,7 +147,7 @@ fn main() -> ! {
         let state_dir = LADDER_DIR.resolve(val_a1);
         let voltage_mv = VoltageMonitor::calculate_millivolts(val_a2);
         let voltage_status = VoltageMonitor::status(voltage_mv);
-        let limit_switch_pressed = LIMIT_SWITCH_PRESSED.load(Ordering::Relaxed);
+        let limit_switch_pressed = d2.is_high();
 
         inputs.act_prev = inputs.act_curr;
         inputs.act_curr = state_act;
