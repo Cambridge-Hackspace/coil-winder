@@ -5,6 +5,7 @@ pub mod motor_test;
 pub mod not_implemented;
 pub mod preflight;
 pub mod switch_test;
+pub mod voltage_danger;
 pub mod voltage_test;
 
 use crate::display::{DisplayManager, HardwareDisplay};
@@ -38,6 +39,7 @@ pub enum AppState {
     SwitchTest,
     VoltageTest,
     MotorTest,
+    VoltageDanger { ticks: u16, high: bool },
 }
 
 impl AppState {
@@ -66,6 +68,9 @@ impl AppState {
             AppState::SwitchTest => switch_test::update(ui, display, inputs, switch_csv),
             AppState::VoltageTest => voltage_test::update(ui, display, inputs, voltage_mv),
             AppState::MotorTest => motor_test::update(ui, display, inputs, spindle, traverse),
+            AppState::VoltageDanger { ticks, high } => {
+                voltage_danger::update(*ticks, *high, ui, display)
+            }
         }
     }
 }

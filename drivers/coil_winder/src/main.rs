@@ -19,7 +19,7 @@ use panic_halt as _;
 use state::AppState;
 use stepper::StepperMotor;
 use string_buffer::StringBuffer;
-use voltage::VoltageMonitor;
+use voltage::{VoltageMonitor, VoltageStatus};
 
 #[arduino_hal::entry]
 fn main() -> ! {
@@ -95,11 +95,28 @@ fn main() -> ! {
         let state_act = LADDER_ACT.resolve(val_a0);
         let state_dir = LADDER_DIR.resolve(val_a1);
         let voltage_mv = VoltageMonitor::calculate_millivolts(val_a2);
+        let voltage_status = VoltageMonitor::status(voltage_mv);
 
         inputs.act_prev = inputs.act_curr;
         inputs.act_curr = state_act;
         inputs.dir_prev = inputs.dir_curr;
         inputs.dir_curr = state_dir;
+
+        if !matches!(
+            app_state,
+            AppState::VoltageTest | AppState::VoltageDanger { .. }
+        ) {
+            if voltage_status != VoltageStatus::Optimal
+                && voltage_status != VoltageStatus::Suboptimal
+            {
+                spindle.release();
+                traverse.release();
+                app_state = AppState::VoltageDanger {
+                    ticks: 1800,
+                    high: voltage_status == VoltageStatus::DangerouslyHigh,
+                };
+            }
+        }
 
         let mut csv_buf = StringBuffer::<64>::new();
         let mut first = true;
@@ -156,11 +173,12 @@ fn main() -> ! {
 
             let _ = ufmt::uwriteln!(
                 &mut serial,
-                "A0: {}, A1: {}, A2: {} ({}mV) | ACT: {}, DIR: {} | {}",
+                "A0: {}, A1: {}, A2: {} ({}mV - {:?}) | ACT: {}, DIR: {} | {}",
                 val_a0,
                 val_a1,
                 val_a2,
                 voltage_mv,
+                voltage_status,
                 state_act,
                 state_dir,
                 csv_buf.as_str()

@@ -8,7 +8,7 @@ pub fn update<D: HardwareDisplay>(
     display: &mut D,
     inputs: &InputState,
 ) -> AppState {
-    let _ = ui.draw(display, &["Cambridge Hackspace", "Welcome!"]);
+    let _ = ui.draw(display, &["Cambridge Hackspace", "    Welcome!"]);
 
     if inputs.just_pressed_act(ACT_CENTER) || inputs.just_pressed_act(ACT_SET) {
         AppState::Menu {
