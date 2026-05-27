@@ -1,5 +1,7 @@
 pub mod about;
 pub mod home;
+pub mod homing;
+pub mod homing_error;
 pub mod menu;
 pub mod motor_test;
 pub mod not_implemented;
@@ -31,15 +33,35 @@ impl ReturnTarget {
 
 #[derive(Clone, Copy)]
 pub enum AppState {
-    Preflight { ticks: u16 },
+    Preflight {
+        ticks: u16,
+    },
     Home,
-    Menu { id: menu::MenuId, selection: u8 },
-    NotImplemented { ticks: u16, prev: ReturnTarget },
+    Menu {
+        id: menu::MenuId,
+        selection: u8,
+    },
+    CarriageHoming {
+        phase: u8,
+        home_pos: i32,
+        start_pos: i32,
+        target: homing::HomingTarget,
+    },
+    HomingError {
+        msg: &'static str,
+    },
+    NotImplemented {
+        ticks: u16,
+        prev: ReturnTarget,
+    },
     About,
     SwitchTest,
     VoltageTest,
     MotorTest,
-    VoltageDanger { ticks: u16, high: bool },
+    VoltageDanger {
+        ticks: u16,
+        high: bool,
+    },
 }
 
 impl AppState {
@@ -52,6 +74,7 @@ impl AppState {
         ui: &mut DisplayManager,
         display: &mut D,
         inputs: &InputState,
+        limit_switch_pressed: bool,
         switch_csv: &str,
         voltage_mv: u16,
         spindle: &mut dyn crate::stepper::StepperMotor,
@@ -61,6 +84,24 @@ impl AppState {
             AppState::Preflight { ticks } => preflight::update(*ticks, ui, display),
             AppState::Home => home::update(ui, display, inputs),
             AppState::Menu { id, selection } => menu::update(*id, *selection, ui, display, inputs),
+            AppState::CarriageHoming {
+                phase,
+                home_pos,
+                start_pos,
+                target,
+            } => homing::update(
+                *phase,
+                *home_pos,
+                *start_pos,
+                *target,
+                ui,
+                display,
+                inputs,
+                limit_switch_pressed,
+                spindle,
+                traverse,
+            ),
+            AppState::HomingError { msg } => homing_error::update(msg, ui, display, inputs),
             AppState::NotImplemented { ticks, prev } => {
                 not_implemented::update(*ticks, *prev, ui, display, inputs)
             }

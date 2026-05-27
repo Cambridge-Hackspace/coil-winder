@@ -15,6 +15,8 @@ pub trait StepperMotor {
     fn speed(&self) -> u8;
     fn direction(&self) -> Direction;
     fn is_moving(&self) -> bool;
+    fn position(&self) -> i32;
+    fn set_position(&mut self, pos: i32);
 }
 
 pub struct Stepper<P1, P2, P3, P4> {
@@ -28,6 +30,7 @@ pub struct Stepper<P1, P2, P3, P4> {
     moving: bool,
     tick_count: u16,
     ticks_per_step: u16,
+    position: i32,
 }
 
 impl<P1, P2, P3, P4> Stepper<P1, P2, P3, P4>
@@ -49,6 +52,7 @@ where
             moving: false,
             tick_count: 0,
             ticks_per_step: 1,
+            position: 0,
         }
     }
 
@@ -138,6 +142,7 @@ where
             match self.direction {
                 Direction::Forward => {
                     self.step_index = (self.step_index + 1) % 4;
+                    self.position = self.position.wrapping_add(1);
                 }
                 Direction::Backward => {
                     self.step_index = if self.step_index == 0 {
@@ -145,6 +150,7 @@ where
                     } else {
                         self.step_index - 1
                     };
+                    self.position = self.position.wrapping_sub(1);
                 }
             }
 
@@ -162,5 +168,13 @@ where
 
     fn is_moving(&self) -> bool {
         self.moving
+    }
+
+    fn position(&self) -> i32 {
+        self.position
+    }
+
+    fn set_position(&mut self, pos: i32) {
+        self.position = pos;
     }
 }

@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![feature(abi_avr_interrupt)]
 
 mod display;
 mod inputs;
@@ -10,7 +11,7 @@ mod stepper;
 mod string_buffer;
 mod voltage;
 
-use arduino_hal::prelude::*;
+use core::sync::atomic::{AtomicBool, Ordering};
 use display::DisplayManager;
 use inputs::InputState;
 use ladder::ResistorLadder;
@@ -20,6 +21,14 @@ use state::AppState;
 use stepper::StepperMotor;
 use string_buffer::StringBuffer;
 use voltage::{VoltageMonitor, VoltageStatus};
+
+static LIMIT_SWITCH_PRESSED: AtomicBool = AtomicBool::new(false);
+
+#[avr_device::interrupt(atmega328p)]
+fn INT0() {
+    let is_high = unsafe { (*arduino_hal::pac::PORTD::ptr()).pind().read().bits() & (1 << 2) != 0 };
+    LIMIT_SWITCH_PRESSED.store(is_high, Ordering::Relaxed);
+}
 
 #[arduino_hal::entry]
 fn main() -> ! {
@@ -33,6 +42,7 @@ fn main() -> ! {
     let a0 = pins.a0.into_pull_up_input().into_analog_input(&mut adc);
     let a1 = pins.a1.into_pull_up_input().into_analog_input(&mut adc);
     let a2 = pins.a2.into_analog_input(&mut adc);
+    let d2 = pins.d2.into_pull_up_input();
 
     let i2c = arduino_hal::I2c::new(
         dp.TWI,
@@ -54,6 +64,16 @@ fn main() -> ! {
         pins.d10.into_output(),
         pins.d11.into_output(),
     );
+
+    dp.EXINT
+        .eicra()
+        .modify(|r, w| unsafe { w.bits((r.bits() & !0x03) | 0x01) });
+    dp.EXINT
+        .eimsk()
+        .modify(|r, w| unsafe { w.bits(r.bits() | 0x01) });
+
+    LIMIT_SWITCH_PRESSED.store(d2.is_high(), Ordering::Relaxed);
+    unsafe { avr_device::interrupt::enable() };
 
     arduino_hal::delay_ms(500);
 
@@ -96,6 +116,7 @@ fn main() -> ! {
         let state_dir = LADDER_DIR.resolve(val_a1);
         let voltage_mv = VoltageMonitor::calculate_millivolts(val_a2);
         let voltage_status = VoltageMonitor::status(voltage_mv);
+        let limit_switch_pressed = LIMIT_SWITCH_PRESSED.load(Ordering::Relaxed);
 
         inputs.act_prev = inputs.act_curr;
         inputs.act_curr = state_act;
@@ -154,6 +175,10 @@ fn main() -> ! {
             add_switch!("RESET");
         }
 
+        if limit_switch_pressed {
+            add_switch!("LIMIT");
+        }
+
         if first {
             let _ = ufmt::uwrite!(&mut csv_buf, "None");
         }
@@ -162,6 +187,7 @@ fn main() -> ! {
             &mut ui,
             &mut lcd,
             &inputs,
+            limit_switch_pressed,
             csv_buf.as_str(),
             voltage_mv,
             &mut spindle,

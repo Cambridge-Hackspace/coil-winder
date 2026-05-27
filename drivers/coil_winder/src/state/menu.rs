@@ -1,6 +1,6 @@
 use crate::display::{DisplayManager, HardwareDisplay};
 use crate::inputs::{InputState, ACT_CENTER, ACT_RESET, ACT_SET, DIR_LEFT, DIR_RIGHT};
-use crate::state::{AppState, ReturnTarget};
+use crate::state::AppState;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum MenuId {
@@ -19,7 +19,12 @@ impl MenuId {
     pub fn items(&self) -> &'static [&'static str] {
         match self {
             MenuId::Main => &["Wind a Coil", "Maintenance", "About"],
-            MenuId::Maintenance => &["Motor Test", "Switch Test", "Voltage Test"],
+            MenuId::Maintenance => &[
+                "Carriage Homing",
+                "Motor Test",
+                "Switch Test",
+                "Voltage Test",
+            ],
         }
     }
 
@@ -36,9 +41,11 @@ impl MenuId {
     pub fn select(&self, selection: u8) -> AppState {
         match self {
             MenuId::Main => match selection {
-                0 => AppState::NotImplemented {
-                    ticks: 100,
-                    prev: ReturnTarget::Menu(*self, selection),
+                0 => AppState::CarriageHoming {
+                    phase: 1,
+                    home_pos: 0,
+                    start_pos: 0,
+                    target: crate::state::homing::HomingTarget::WindCoil,
                 },
                 1 => AppState::Menu {
                     id: MenuId::Maintenance,
@@ -51,9 +58,15 @@ impl MenuId {
                 },
             },
             MenuId::Maintenance => match selection {
-                0 => AppState::MotorTest,
-                1 => AppState::SwitchTest,
-                2 => AppState::VoltageTest,
+                0 => AppState::CarriageHoming {
+                    phase: 1,
+                    home_pos: 0,
+                    start_pos: 0,
+                    target: crate::state::homing::HomingTarget::MaintenanceMenu,
+                },
+                1 => AppState::MotorTest,
+                2 => AppState::SwitchTest,
+                3 => AppState::VoltageTest,
                 _ => AppState::Menu {
                     id: *self,
                     selection,
