@@ -6,7 +6,7 @@ pub fn update<D: HardwareDisplay>(
     ui: &mut DisplayManager,
     display: &mut D,
 ) -> AppState {
-    let _ = ui.draw(display, &["Cambridge Hackspace", "Loading..."]);
+    let _ = ui.draw(display, &["Cambridge Hackspace", "   Loading..."]);
 
     if ticks == 0 {
         AppState::Home
