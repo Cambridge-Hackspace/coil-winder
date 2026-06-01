@@ -9,6 +9,9 @@ pub mod preflight;
 pub mod switch_test;
 pub mod voltage_danger;
 pub mod voltage_test;
+pub mod winding;
+pub mod winding_complete;
+pub mod winding_setup;
 
 use crate::display::{DisplayManager, HardwareDisplay};
 use crate::inputs::InputState;
@@ -62,6 +65,21 @@ pub enum AppState {
         ticks: u16,
         high: bool,
     },
+    WindingSetup {
+        step: u8,
+        wire_diameter_um: u16,
+        total_turns: u32,
+        start_pos: i32,
+        end_pos: i32,
+        held_ticks: u16,
+    },
+    Winding {
+        wire_diameter_um: u16,
+        total_turns: u32,
+        start_pos: i32,
+        end_pos: i32,
+    },
+    WindingComplete,
 }
 
 impl AppState {
@@ -79,6 +97,7 @@ impl AppState {
         voltage_mv: u16,
         spindle: &mut dyn crate::stepper::StepperMotor,
         traverse: &mut dyn crate::stepper::StepperMotor,
+        winder: &crate::winder::WinderProxy,
     ) -> AppState {
         match self {
             AppState::Preflight { ticks } => preflight::update(*ticks, ui, display),
@@ -112,6 +131,43 @@ impl AppState {
             AppState::VoltageDanger { ticks, high } => {
                 voltage_danger::update(*ticks, *high, ui, display)
             }
+            AppState::WindingSetup {
+                step,
+                wire_diameter_um,
+                total_turns,
+                start_pos,
+                end_pos,
+                held_ticks,
+            } => winding_setup::update(
+                *step,
+                *wire_diameter_um,
+                *total_turns,
+                *start_pos,
+                *end_pos,
+                *held_ticks,
+                ui,
+                display,
+                inputs,
+                traverse,
+            ),
+            AppState::Winding {
+                wire_diameter_um,
+                total_turns,
+                start_pos,
+                end_pos,
+            } => winding::update(
+                *wire_diameter_um,
+                *total_turns,
+                *start_pos,
+                *end_pos,
+                ui,
+                display,
+                inputs,
+                winder,
+                spindle,
+                traverse,
+            ),
+            AppState::WindingComplete => winding_complete::update(ui, display, inputs),
         }
     }
 }

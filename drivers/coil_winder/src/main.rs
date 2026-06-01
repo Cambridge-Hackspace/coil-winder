@@ -10,6 +10,7 @@ mod state;
 mod stepper;
 mod string_buffer;
 mod voltage;
+mod winder;
 
 use avr_device::interrupt::Mutex;
 use core::cell::RefCell;
@@ -23,6 +24,7 @@ use state::AppState;
 use stepper::StepperMotor;
 use string_buffer::StringBuffer;
 use voltage::{VoltageMonitor, VoltageStatus};
+use winder::{WinderProxy, WinderState};
 
 static LIMIT_SWITCH_PRESSED: AtomicBool = AtomicBool::new(false);
 
@@ -31,15 +33,17 @@ type DynStepper = stepper::Stepper<DynPin, DynPin, DynPin, DynPin>;
 
 static SPINDLE: Mutex<RefCell<Option<DynStepper>>> = Mutex::new(RefCell::new(None));
 static TRAVERSE: Mutex<RefCell<Option<DynStepper>>> = Mutex::new(RefCell::new(None));
+static WINDER: Mutex<RefCell<WinderState>> = Mutex::new(RefCell::new(WinderState::new()));
 
 #[avr_device::interrupt(atmega328p)]
 fn TIMER1_COMPA() {
     avr_device::interrupt::free(|cs| {
-        if let Some(s) = SPINDLE.borrow(cs).borrow_mut().as_mut() {
-            s.tick();
-        }
-        if let Some(t) = TRAVERSE.borrow(cs).borrow_mut().as_mut() {
-            t.tick();
+        let mut w = WINDER.borrow(cs).borrow_mut();
+        let mut s_ref = SPINDLE.borrow(cs).borrow_mut();
+        let mut t_ref = TRAVERSE.borrow(cs).borrow_mut();
+
+        if let (Some(s), Some(t)) = (s_ref.as_mut(), t_ref.as_mut()) {
+            w.tick(s, t);
         }
     });
 }
@@ -71,14 +75,14 @@ fn main() -> ! {
         100000,
     );
 
-    let mut spindle_stepper = stepper::Stepper::new(
+    let spindle_stepper = stepper::Stepper::new(
         pins.d4.into_output().downgrade(),
         pins.d5.into_output().downgrade(),
         pins.d6.into_output().downgrade(),
         pins.d7.into_output().downgrade(),
     );
 
-    let mut traverse_stepper = stepper::Stepper::new(
+    let traverse_stepper = stepper::Stepper::new(
         pins.d8.into_output().downgrade(),
         pins.d9.into_output().downgrade(),
         pins.d10.into_output().downgrade(),
@@ -127,6 +131,7 @@ fn main() -> ! {
     };
     let mut app_state = AppState::initial();
     let mut loop_counter: u16 = 0;
+    let winder_proxy = WinderProxy::new(&WINDER);
 
     loop {
         led.toggle();
@@ -214,6 +219,8 @@ fn main() -> ! {
             let _ = ufmt::uwrite!(&mut csv_buf, "None");
         }
 
+        let prev_state_disc = core::mem::discriminant(&app_state);
+
         app_state = app_state.update(
             &mut ui,
             &mut lcd,
@@ -223,7 +230,36 @@ fn main() -> ! {
             voltage_mv,
             &mut spindle,
             &mut traverse,
+            &winder_proxy,
         );
+
+        let new_state_disc = core::mem::discriminant(&app_state);
+        if prev_state_disc != new_state_disc {
+            if let AppState::Winding {
+                wire_diameter_um,
+                total_turns,
+                start_pos,
+                end_pos,
+            } = app_state
+            {
+                let ratio = crate::winder::calculate_ratio(wire_diameter_um);
+                let _ = ufmt::uwriteln!(
+                    &mut serial,
+                    "Starting Winder: Dia: {}um, Turns: {}, Start: {}, End: {}, Ratio: {}",
+                    wire_diameter_um,
+                    total_turns,
+                    start_pos,
+                    end_pos,
+                    ratio
+                );
+
+                winder_proxy.start(total_turns, ratio, start_pos, end_pos, 50);
+                spindle.set_speed(crate::stepper::Speed::Fast);
+                spindle.set_direction(crate::stepper::Direction::Forward);
+                spindle.set_moving(true);
+                traverse.set_moving(false);
+            }
+        }
 
         if loop_counter >= 120 {
             ui.tick();

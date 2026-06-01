@@ -30,7 +30,8 @@ pub trait StepperMotor {
     fn set_direction(&mut self, dir: Direction);
     fn set_moving(&mut self, moving: bool);
     fn release(&mut self);
-    fn tick(&mut self);
+    fn tick(&mut self) -> bool;
+    fn step_once(&mut self, dir: Direction);
     fn speed(&self) -> Speed;
     fn direction(&self) -> Direction;
     fn is_moving(&self) -> bool;
@@ -147,9 +148,9 @@ where
         let _ = self.p4.set_low();
     }
 
-    fn tick(&mut self) {
+    fn tick(&mut self) -> bool {
         if !self.moving {
-            return;
+            return false;
         }
 
         self.tick_count += 1;
@@ -172,7 +173,27 @@ where
             }
 
             self.apply_step();
+            return true;
         }
+        false
+    }
+
+    fn step_once(&mut self, dir: Direction) {
+        match dir {
+            Direction::Forward => {
+                self.step_index = (self.step_index + 1) % 4;
+                self.position = self.position.wrapping_add(1);
+            }
+            Direction::Backward => {
+                self.step_index = if self.step_index == 0 {
+                    3
+                } else {
+                    self.step_index - 1
+                };
+                self.position = self.position.wrapping_sub(1);
+            }
+        }
+        self.apply_step();
     }
 
     fn speed(&self) -> Speed {
@@ -240,7 +261,17 @@ impl<'a, S: StepperMotor> StepperMotor for StepperProxy<'a, S> {
         });
     }
 
-    fn tick(&mut self) {} // nop; handled by hardware interrupt
+    fn tick(&mut self) -> bool {
+        false
+    } // nop; handled by hardware interrupt
+
+    fn step_once(&mut self, dir: Direction) {
+        avr_device::interrupt::free(|cs| {
+            if let Some(s) = self.mutex.borrow(cs).borrow_mut().as_mut() {
+                s.step_once(dir);
+            }
+        });
+    }
 
     fn speed(&self) -> Speed {
         avr_device::interrupt::free(|cs| {

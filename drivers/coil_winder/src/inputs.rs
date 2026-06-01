@@ -24,4 +24,34 @@ impl InputState {
     pub fn just_pressed_act(&self, mask: u8) -> bool {
         (self.act_curr & mask) != 0 && (self.act_prev & mask) == 0
     }
+
+    /// Returns true iff no action button outside the mask is currently pressed.
+    pub fn only_expected_act(&self, mask: u8) -> bool {
+        0 == mask ^ (mask | self.act_curr)
+    }
+
+    /// Returns true iff no directional button outside the mask is currently pressed.
+    pub fn only_expected_dir(&self, mask: u8) -> bool {
+        0 == mask ^ (mask | self.dir_curr)
+    }
+
+    /// Returns true iff no action button outside the mask was previously pressed.
+    pub fn only_expected_prev_act(&self, mask: u8) -> bool {
+        0 == mask ^ (mask | self.act_prev)
+    }
+
+    /// Returns true iff no directional button outside the mask was previously is currently pressed.
+    pub fn only_expected_prev_dir(&self, mask: u8) -> bool {
+        0 == mask ^ (mask | self.dir_prev)
+    }
+
+    /// Returns true iff action intent (specified by mask) is newly present.
+    pub fn intent_changed_act(&self, mask: u8) -> bool {
+        self.only_expected_act(mask) && !self.only_expected_prev_act(mask)
+    }
+
+    /// Returns true iff directional intent (specified by mask) is newly present.
+    pub fn intent_changed_dir(&self, mask: u8) -> bool {
+        self.only_expected_dir(mask) && !self.only_expected_prev_dir(mask)
+    }
 }
