@@ -4,7 +4,10 @@ Welcome to the [Cambridge Hackspace](https://www.cambridgehackspace.com)
 Coil Winder Project! This repository is essentially where I'll be tracking and
 documenting progress on an open-source axial flux coil-winding machine.
 
-The entirety of this project is released under the [MIT License](https://mit-license.org/).
+This project is released under the Blue Oak Model License 1.0.0, with its
+specifications under the Open Web Foundation Agreement 1.0 and its
+documentation and diagrams under Creative Commons Attribution 4.0
+International; see [LICENSE](LICENSE).
 We humbly request, but do not require, that you refrain from using this
 project for Evil.
 
